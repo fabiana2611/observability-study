@@ -1,0 +1,46 @@
+services:
+  prometheus:
+    image: prom/prometheus
+    container_name: prometheus-study
+    volumes:
+      - "./prometheus.yml:/etc/prometheus/prometheus.yml"
+      - "./rules.yml:/etc/prometheus/rules.yml"
+    networks:
+      - localprom
+    ports:
+      - 9090:9090
+  node-exporter:
+    image: prom/node-exporter
+    container_name: node-exporter-study
+    networks:
+      - localprom
+    ports:
+      - 9100:9100
+  alert-manager:
+    image: prom/alertmanager
+    container_name: alertmanager-study
+    volumes:
+      - "./alertmanager.yml:/alertmanager/alertmanager.yml"
+    networks:
+      - localprom
+    ports:
+      - 9093:9093
+  grafana:
+    image: grafana/grafana-enterprise
+    container_name: grafana-study
+    networks:
+      - localprom
+    ports:
+      - 3000:3000
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+    volumes:
+      - grafana-storage:/var/lib/grafana
+
+networks:
+  localprom:
+    driver: bridge
+
+volumes:
+  grafana-storage: {}    
