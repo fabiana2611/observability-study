@@ -1,0 +1,293 @@
+openapi: 3.0.3
+info:
+  title: Photo Album Organizer API
+  description: Backend API for photo album management and retrieval
+  version: 1.0.0
+  contact:
+    name: Photo Album Organizer Team
+
+servers:
+  - url: http://localhost:3001/api
+    description: Local development server
+
+paths:
+  /albums:
+    get:
+      summary: Get all albums
+      description: Returns list of all albums with photo count and preview
+      operationId: getAlbums
+      tags:
+        - Albums
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AlbumListItem'
+              example:
+                - id: 1
+                  city_name: "Paris"
+                  photo_count: 15
+                  preview_photo: "/sample-photos/paris-1.jpg"
+                - id: 2
+                  city_name: "Tokyo"
+                  photo_count: 15
+                  preview_photo: "/sample-photos/tokyo-1.jpg"
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /albums/{id}:
+    get:
+      summary: Get album by ID
+      description: Returns album details with all photos
+      operationId: getAlbumById
+      tags:
+        - Albums
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Album ID
+          schema:
+            type: integer
+            example: 1
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AlbumDetail'
+              example:
+                id: 1
+                city_name: "Paris"
+                photos:
+                  - id: 101
+                    file_path: "/sample-photos/paris-1.jpg"
+                    display_order: 0
+                  - id: 102
+                    file_path: "/sample-photos/paris-2.jpg"
+                    display_order: 1
+        '404':
+          description: Album not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "Album not found"
+                code: "ALBUM_NOT_FOUND"
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /photos/{id}:
+    get:
+      summary: Get photo by ID
+      description: Returns photo details with parent album info
+      operationId: getPhotoById
+      tags:
+        - Photos
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Photo ID
+          schema:
+            type: integer
+            example: 101
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PhotoDetail'
+              example:
+                id: 101
+                file_path: "/sample-photos/paris-1.jpg"
+                album:
+                  id: 1
+                  city_name: "Paris"
+        '404':
+          description: Photo not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "Photo not found"
+                code: "PHOTO_NOT_FOUND"
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /health:
+    get:
+      summary: Health check
+      description: Returns server health status
+      operationId: healthCheck
+      tags:
+        - System
+      responses:
+        '200':
+          description: Server is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "ok"
+                  timestamp:
+                    type: string
+                    format: date-time
+                    example: "2026-01-06T10:30:00Z"
+
+components:
+  schemas:
+    AlbumListItem:
+      type: object
+      description: Album summary for list view
+      required:
+        - id
+        - city_name
+        - photo_count
+      properties:
+        id:
+          type: integer
+          description: Unique album identifier
+          example: 1
+        city_name:
+          type: string
+          description: Name of the city
+          minLength: 1
+          maxLength: 50
+          example: "Paris"
+        photo_count:
+          type: integer
+          description: Number of photos in album
+          minimum: 0
+          example: 15
+        preview_photo:
+          type: string
+          nullable: true
+          description: File path to first photo (null if album empty)
+          example: "/sample-photos/paris-1.jpg"
+
+    AlbumDetail:
+      type: object
+      description: Album with all photos
+      required:
+        - id
+        - city_name
+        - photos
+      properties:
+        id:
+          type: integer
+          description: Unique album identifier
+          example: 1
+        city_name:
+          type: string
+          description: Name of the city
+          minLength: 1
+          maxLength: 50
+          example: "Paris"
+        photos:
+          type: array
+          description: Array of photos in display order
+          items:
+            $ref: '#/components/schemas/Photo'
+
+    Photo:
+      type: object
+      description: Photo metadata
+      required:
+        - id
+        - file_path
+        - display_order
+      properties:
+        id:
+          type: integer
+          description: Unique photo identifier
+          example: 101
+        file_path:
+          type: string
+          description: Relative path to photo file
+          example: "/sample-photos/paris-1.jpg"
+        display_order:
+          type: integer
+          description: Order within album (0-based)
+          minimum: 0
+          example: 0
+
+    PhotoDetail:
+      type: object
+      description: Photo with parent album context
+      required:
+        - id
+        - file_path
+        - album
+      properties:
+        id:
+          type: integer
+          description: Unique photo identifier
+          example: 101
+        file_path:
+          type: string
+          description: Relative path to photo file
+          example: "/sample-photos/paris-1.jpg"
+        album:
+          type: object
+          description: Parent album reference
+          required:
+            - id
+            - city_name
+          properties:
+            id:
+              type: integer
+              example: 1
+            city_name:
+              type: string
+              example: "Paris"
+
+    Error:
+      type: object
+      description: Error response
+      required:
+        - error
+      properties:
+        error:
+          type: string
+          description: Human-readable error message
+          example: "Album not found"
+        code:
+          type: string
+          description: Machine-readable error code
+          example: "ALBUM_NOT_FOUND"
+        details:
+          type: object
+          description: Additional error context
+          nullable: true
+
+tags:
+  - name: Albums
+    description: Album management endpoints
+  - name: Photos
+    description: Photo retrieval endpoints
+  - name: System
+    description: System health and status endpoints
