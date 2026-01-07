@@ -52,6 +52,10 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000) to view the application.
 
+### Observability Setup
+
+For zero-code OpenTelemetry observability with console export, see [specs/002-otel-console-export/quickstart.md](specs/002-otel-console-export/quickstart.md).
+
 ## Available Scripts
 
 - `npm run dev` - Start development server (Turbopack)

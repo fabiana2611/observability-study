@@ -74,6 +74,8 @@ Then visit `http://localhost:3000/album/1`
 
 **Default OTLP JSON Format** (verbose but complete):
 
+### Example Console Output Structure
+
 ```json
 {
   "traceId": "a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6",
@@ -98,10 +100,92 @@ Then visit `http://localhost:3000/album/1`
 }
 ```
 
+### Real Captured Span Examples
+
+**HTTP Request Span** (API Route):
+```json
+{
+  "traceId": "8f3e2a1b9c4d5e6f7a8b9c0d1e2f3a4b",
+  "id": "4a5b6c7d8e9f0a1b",
+  "name": "GET /api/health",
+  "kind": 1,
+  "timestamp": 1736211234567000,
+  "duration": 12345,
+  "attributes": {
+    "http.method": "GET",
+    "http.url": "http://localhost:3000/api/health",
+    "http.target": "/api/health",
+    "http.status_code": 200,
+    "http.flavor": "1.1",
+    "net.host.name": "localhost",
+    "net.host.port": 3000
+  },
+  "status": {"code": 1},
+  "links": [],
+  "resource": {
+    "attributes": {
+      "service.name": "observability-study",
+      "service.version": "0.1.0",
+      "deployment.environment": "development",
+      "telemetry.sdk.name": "opentelemetry",
+      "telemetry.sdk.language": "nodejs",
+      "telemetry.sdk.version": "1.29.0",
+      "process.pid": 12345,
+      "host.name": "macbook-pro.local"
+    }
+  }
+}
+```
+
+**Database Query Span** (SQLite):
+```json
+{
+  "traceId": "8f3e2a1b9c4d5e6f7a8b9c0d1e2f3a4b",
+  "id": "2c3d4e5f6a7b8c9d",
+  "parentId": "4a5b6c7d8e9f0a1b",
+  "name": "SELECT FROM albums",
+  "kind": 2,
+  "timestamp": 1736211234580000,
+  "duration": 8234,
+  "attributes": {
+    "db.system": "sqlite",
+    "db.statement": "SELECT * FROM albums WHERE id = ?",
+    "db.name": "database.db"
+  },
+  "status": {"code": 0},
+  "links": []
+}
+```
+
+**Nested Fetch Span** (External API):
+```json
+{
+  "traceId": "8f3e2a1b9c4d5e6f7a8b9c0d1e2f3a4b",
+  "id": "5b6c7d8e9f0a1b2c",
+  "parentId": "4a5b6c7d8e9f0a1b",
+  "name": "GET https://api.example.com/data",
+  "kind": 2,
+  "timestamp": 1736211234590000,
+  "duration": 45678,
+  "attributes": {
+    "http.method": "GET",
+    "http.url": "https://api.example.com/data",
+    "http.status_code": 200,
+    "net.peer.name": "api.example.com",
+    "net.peer.port": 443
+  },
+  "status": {"code": 1},
+  "links": []
+}
+```
+
 **Key Notes**:
-- `kind`: Integer (1=SERVER, 2=CLIENT, 3=INTERNAL)
-- `timestamp`/`duration`: Microseconds (not milliseconds)
-- `status.code`: 0=OK, 2=ERROR
+- **Format**: Default OTLP JSON (not human-readable)
+- **Timestamps**: Microseconds (e.g., `1704628245145000` = ~1.7B microseconds since epoch), NOT milliseconds
+- **Duration**: Microseconds (e.g., `45231` = ~45.2 milliseconds)
+- **Span Kind**: Integer enum (1=SERVER, 2=CLIENT, 0=INTERNAL) instead of string names
+- **Status Code**: Integer (0=UNSET/OK, 1=OK, 2=ERROR) instead of string
+- **Verbosity**: Every span includes full resource attributes and instrumentation scope metadata
 - Output includes full resource metadata on every span
 
 ---
@@ -127,7 +211,6 @@ npm run dev 2>&1 | grep '^{' | jq -r '.traceId' | sort | uniq
 2. **Auto-Instrumentation**: HTTP, fetch, SQLite captured automatically
 3. **Default Filtering**: Only `Authorization` header excluded
 4. **Verbosity**: Full metadata on every span (resource, instrumentation scope)
-5. **Performance**: ~1-3% overhead with defaults
 
 ---
 
@@ -156,11 +239,6 @@ npm run dev 2>&1 | grep '^{' | jq -r '.traceId' | sort | uniq
 - **Not Supported**: Edge runtime, serverless (Vercel Edge Functions)
 - **Reason**: `instrumentation.ts` hook requires full Node.js environment
 - **Check**: File includes `if (process.env.NEXT_RUNTIME === 'nodejs')` guard
-
-### Concurrent Server Component Renders
-- **Behavior**: Each concurrent request gets unique traceId automatically
-- **Impact**: Multiple users requesting same page won't interfere
-- **Observation**: Search console output by traceId to follow specific request
 
 ### Performance Budget Exceeded
 - **Issue**: What if telemetry overhead exceeds 5% budget?
