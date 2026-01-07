@@ -10,6 +10,8 @@
     "seed": "tsx scripts/seed-data.ts"
   },
   "dependencies": {
+    "@opentelemetry/auto-instrumentations-node": "^0.67.3",
+    "@opentelemetry/sdk-node": "^0.208.0",
     "better-sqlite3": "^12.5.0",
     "next": "16.1.1",
     "react": "19.2.3",

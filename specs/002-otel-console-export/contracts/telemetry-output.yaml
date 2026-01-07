@@ -1,0 +1,369 @@
+openapi: 3.1.0
+info:
+  title: OpenTelemetry Console Output Schema (Default OTLP Format)
+  version: 1.0.0
+  description: |
+    This schema documents the **default OpenTelemetry SDK console output format** 
+    for the Next.js photo album application. This is the out-of-the-box OTLP JSON 
+    format with NO customization - exactly what appears in stdout for study purposes.
+    
+    **Study Approach**: Document SDK defaults, not custom output.
+    
+    **Key Format Notes**:
+    - Timestamps: Microseconds since Unix epoch (integer)
+    - Span Kind: Integer enum (0=INTERNAL, 1=SERVER, 2=CLIENT, 3=PRODUCER, 4=CONSUMER)
+    - Status Code: Integer enum (0=UNSET, 1=OK, 2=ERROR)
+    - Duration: Microseconds (integer)
+    - IDs: Hex strings (traceId: 32 chars, spanId: 16 chars)
+    - Output: Newline-delimited JSON (NDJSON), one span per line
+    
+    Related: [data-model.md](../data-model.md)
+
+components:
+  schemas:
+    ReadableSpan:
+      type: object
+      description: |
+        Default OpenTelemetry SDK span format exported to console.
+        This is the actual structure you'll see in terminal output.
+      required:
+        - traceId
+        - id
+        - name
+        - kind
+        - timestamp
+        - duration
+        - attributes
+        - status
+        - events
+        - links
+      properties:
+        traceId:
+          type: string
+          pattern: '^[a-f0-9]{32}$'
+          description: |
+            Globally unique trace identifier (128-bit hex string).
+            All spans in same request share this ID.
+          example: "7c3a8f2b1e4d9c6a5b8f3e2a1d7c4b9a"
+        
+        parentId:
+          type: string
+          pattern: '^[a-f0-9]{16}$'
+          nullable: true
+          description: |
+            Parent span ID (64-bit hex string). Undefined for root spans.
+          example: "a1b2c3d4e5f6g7h8"
+        
+        traceState:
+          type: string
+          nullable: true
+          description: |
+            W3C Trace Context state (vendor-specific key-value pairs).
+            Typically undefined in simple setups.
+          example: null
+        
+        name:
+          type: string
+          description: |
+            Human-readable operation name. Format varies by instrumentation:
+            - HTTP: "GET /api/albums"
+            - Database: "SELECT albums"
+            - Internal: "next.renderServerComponent"
+          example: "GET /api/albums"
+        
+        id:
+          type: string
+          pattern: '^[a-f0-9]{16}$'
+          description: |
+            Unique span identifier within the trace (64-bit hex string).
+            Note: Property name is "id", not "spanId".
+          example: "1234567890abcdef"
+        
+        kind:
+          type: integer
+          enum: [0, 1, 2, 3, 4]
+          description: |
+            Span kind as integer enum (NOT human-readable string):
+            - 0: INTERNAL (application logic, database queries)
+            - 1: SERVER (incoming HTTP requests, API routes)
+            - 2: CLIENT (outgoing HTTP requests, fetch calls)
+            - 3: PRODUCER (message queue producer)
+            - 4: CONSUMER (message queue consumer)
+          example: 2
+        
+        timestamp:
+          type: integer
+          format: int64
+          description: |
+            Start time in microseconds since Unix epoch.
+            Example: 1736294400000000 = Jan 7, 2026 00:00:00 UTC
+          example: 1736294400000000
+        
+        duration:
+          type: integer
+          format: int64
+          description: |
+            Execution time in microseconds.
+            Example: 125000 = 125 milliseconds
+          example: 125000
+        
+        attributes:
+          type: object
+          additionalProperties: true
+          description: |
+            Key-value pairs describing the operation. Structure varies by span kind:
+            - HTTP spans: http.method, http.url, http.status_code, http.route
+            - Database spans: db.system, db.statement, db.operation
+            - Next.js spans: next.route, next.page
+          example:
+            http.method: "GET"
+            http.url: "http://localhost:3000/api/albums"
+            http.target: "/api/albums"
+            http.status_code: 200
+            http.route: "/api/albums"
+        
+        status:
+          type: object
+          required:
+            - code
+          properties:
+            code:
+              type: integer
+              enum: [0, 1, 2]
+              description: |
+                Status code as integer enum:
+                - 0: UNSET (default, no explicit outcome)
+                - 1: OK (successful completion)
+                - 2: ERROR (operation failed)
+              example: 1
+            message:
+              type: string
+              description: |
+                Optional error description. Only present when code = 2 (ERROR).
+              example: "Database connection timeout"
+        
+        events:
+          type: array
+          description: |
+            Timestamped log entries within the span (e.g., exceptions, warnings).
+            Empty array if no events occurred.
+          items:
+            $ref: '#/components/schemas/SpanEvent'
+          example: []
+        
+        links:
+          type: array
+          description: |
+            References to other spans (for distributed tracing scenarios).
+            Empty array in basic implementation.
+          items:
+            $ref: '#/components/schemas/SpanLink'
+          example: []
+        
+        resource:
+          $ref: '#/components/schemas/Resource'
+          description: |
+            Service metadata. Attached to every span (not deduplicated).
+    
+    SpanEvent:
+      type: object
+      description: |
+        Timestamped event within a span (e.g., exception, log message).
+      required:
+        - time
+        - name
+        - attributes
+      properties:
+        time:
+          type: integer
+          format: int64
+          description: Event timestamp in microseconds since Unix epoch
+          example: 1736294400050000
+        name:
+          type: string
+          description: Event name (e.g., "exception", "log", "annotation")
+          example: "exception"
+        attributes:
+          type: object
+          additionalProperties: true
+          description: |
+            Event-specific attributes. For exceptions:
+            - exception.type: Error class name
+            - exception.message: Error message
+            - exception.stacktrace: Full stack trace
+          example:
+            exception.type: "Error"
+            exception.message: "Database query failed"
+            exception.stacktrace: "Error: Database query failed\n    at ..."
+    
+    SpanLink:
+      type: object
+      description: |
+        Link to another span (for complex distributed tracing).
+        Not used in basic Next.js application.
+      required:
+        - traceId
+        - spanId
+        - attributes
+      properties:
+        traceId:
+          type: string
+          pattern: '^[a-f0-9]{32}$'
+          example: "7c3a8f2b1e4d9c6a5b8f3e2a1d7c4b9a"
+        spanId:
+          type: string
+          pattern: '^[a-f0-9]{16}$'
+          example: "1234567890abcdef"
+        attributes:
+          type: object
+          additionalProperties: true
+          example: {}
+    
+    Resource:
+      type: object
+      description: |
+        Service-level metadata attached to every span. Contains SDK version,
+        runtime info, host details, and custom attributes.
+      required:
+        - attributes
+      properties:
+        attributes:
+          type: object
+          description: |
+            Resource attributes describing the service and runtime environment.
+            Default attributes + any custom OTEL_RESOURCE_ATTRIBUTES.
+          properties:
+            service.name:
+              type: string
+              description: |
+                Service name. Defaults to "unknown_service:node".
+                Override with OTEL_SERVICE_NAME environment variable.
+              example: "photo-album-app"
+            telemetry.sdk.language:
+              type: string
+              enum: ["nodejs"]
+              example: "nodejs"
+            telemetry.sdk.name:
+              type: string
+              enum: ["opentelemetry"]
+              example: "opentelemetry"
+            telemetry.sdk.version:
+              type: string
+              description: OpenTelemetry SDK version
+              example: "1.29.0"
+            process.pid:
+              type: integer
+              description: Node.js process ID
+              example: 12345
+            process.executable.name:
+              type: string
+              example: "node"
+            process.runtime.name:
+              type: string
+              example: "nodejs"
+            process.runtime.version:
+              type: string
+              description: Node.js runtime version
+              example: "20.10.0"
+            host.name:
+              type: string
+              description: Machine hostname
+              example: "Fabianas-MacBook-Pro.local"
+            host.arch:
+              type: string
+              description: CPU architecture
+              example: "arm64"
+          additionalProperties: true
+          example:
+            service.name: "photo-album-app"
+            telemetry.sdk.language: "nodejs"
+            telemetry.sdk.name: "opentelemetry"
+            telemetry.sdk.version: "1.29.0"
+            process.pid: 12345
+            host.name: "Fabianas-MacBook-Pro.local"
+
+    HTTPAttributes:
+      type: object
+      description: |
+        HTTP semantic conventions for server-side spans (API routes, pages).
+      properties:
+        http.method:
+          type: string
+          enum: ["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"]
+          example: "GET"
+        http.url:
+          type: string
+          format: uri
+          description: Full request URL
+          example: "http://localhost:3000/api/albums"
+        http.target:
+          type: string
+          description: Request path and query string
+          example: "/api/albums?limit=10"
+        http.host:
+          type: string
+          description: Host header value
+          example: "localhost:3000"
+        http.scheme:
+          type: string
+          enum: ["http", "https"]
+          example: "http"
+        http.status_code:
+          type: integer
+          description: HTTP response status code
+          example: 200
+        http.route:
+          type: string
+          description: Route pattern (e.g., Next.js route)
+          example: "/api/albums/[id]"
+        http.user_agent:
+          type: string
+          description: User-Agent header value
+          example: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)..."
+    
+    DatabaseAttributes:
+      type: object
+      description: |
+        Database semantic conventions for SQLite spans.
+      properties:
+        db.system:
+          type: string
+          enum: ["sqlite"]
+          description: Database type
+          example: "sqlite"
+        db.name:
+          type: string
+          description: Database name/file
+          example: "photos.db"
+        db.statement:
+          type: string
+          description: |
+            SQL statement. Parameterized queries show placeholders (?).
+            WARNING: May contain sensitive data in non-parameterized queries.
+          example: "SELECT * FROM albums WHERE id = ?"
+        db.operation:
+          type: string
+          enum: ["SELECT", "INSERT", "UPDATE", "DELETE"]
+          description: SQL operation type
+          example: "SELECT"
+
+    ConsoleOutput:
+      type: object
+      description: |
+        Complete console output format showing actual terminal appearance.
+        Each span appears as one line of NDJSON (newline-delimited JSON).
+      properties:
+        example_output:
+          type: string
+          description: |
+            Example of actual console output for a single HTTP request with 
+            database query. This shows the verbose, unformatted SDK default.
+          example: |
+            {"traceId":"7c3a8f2b1e4d9c6a5b8f3e2a1d7c4b9a","parentId":undefined,"traceState":undefined,"name":"GET /api/albums","id":"1234567890abcdef","kind":1,"timestamp":1736294400000000,"duration":125000,"attributes":{"http.method":"GET","http.url":"http://localhost:3000/api/albums","http.target":"/api/albums","http.status_code":200,"http.route":"/api/albums"},"status":{"code":1},"events":[],"links":[],"resource":{"attributes":{"service.name":"photo-album-app","telemetry.sdk.language":"nodejs","telemetry.sdk.name":"opentelemetry","telemetry.sdk.version":"1.29.0","process.pid":12345,"host.name":"Fabianas-MacBook-Pro.local"}}}
+            {"traceId":"7c3a8f2b1e4d9c6a5b8f3e2a1d7c4b9a","parentId":"1234567890abcdef","traceState":undefined,"name":"SELECT albums","id":"abcdef1234567890","kind":0,"timestamp":1736294400050000,"duration":12000,"attributes":{"db.system":"sqlite","db.statement":"SELECT * FROM albums WHERE id = ?","db.operation":"SELECT"},"status":{"code":1},"events":[],"links":[],"resource":{"attributes":{"service.name":"photo-album-app","telemetry.sdk.language":"nodejs","telemetry.sdk.name":"opentelemetry","telemetry.sdk.version":"1.29.0","process.pid":12345,"host.name":"Fabianas-MacBook-Pro.local"}}}
+
+paths: {}
+
+externalDocs:
+  description: OpenTelemetry Semantic Conventions
+  url: https://opentelemetry.io/docs/specs/semconv/
