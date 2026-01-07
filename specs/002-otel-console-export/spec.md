@@ -24,37 +24,6 @@ Developers need to immediately see application behavior, performance metrics, an
 
 ---
 
-### User Story 2 - Monitor Application Performance Patterns (Priority: P2)
-
-Developers need to understand performance characteristics of their application - which operations are slow, what's the typical response time distribution, and where bottlenecks exist. The system automatically collects timing metrics for all operations and displays aggregate statistics.
-
-**Why this priority**: Performance monitoring is essential for optimizing user experience but doesn't need to be functional for basic observability to work. Builds on P1 by adding analytical capabilities.
-
-**Independent Test**: Run the application and perform typical user workflows (browse 10 albums, view 5 photos, trigger 2-3 errors). Review console output to find performance summaries showing minimum, maximum, and average response times for different operation types (API calls, page loads, etc.).
-
-**Acceptance Scenarios**:
-
-1. **Given** the application has processed multiple requests, **When** I view console metrics output, **Then** I see aggregated timing statistics (min/max/avg) for each operation type (HTTP requests, database queries, etc.)
-2. **Given** I've navigated through the application, **When** I check console output, **Then** I can identify the slowest operations with duration over 1 second by manually reviewing duration values
-
----
-
-### User Story 3 - Trace Requests Across Application Layers (Priority: P3)
-
-Developers need to follow a single user request as it flows through different parts of the application - from browser interaction, through API routes, to database operations. The system maintains trace context across all layers and displays the complete request path.
-
-**Why this priority**: Distributed tracing is valuable for complex debugging but requires understanding of traces first (P1) and adds context to performance analysis (P2). It's a power-user feature.
-
-**Independent Test**: Trigger a specific user action (e.g., viewing photo #5), note the trace ID from console output, then find and verify that all related operations (browser navigation, Next.js server-side rendering, API route execution, database query) share the same trace ID and show parent-child relationships.
-
-**Acceptance Scenarios**:
-
-1. **Given** I'm viewing an album page, **When** I inspect the console trace output, **Then** I see the full operation chain: browser request → Next.js page render → API route call → database query, all linked by trace ID
-2. **Given** a trace ID is displayed in console, **When** an error occurs in any layer, **Then** the entire trace chain is marked with the error context, showing where the failure occurred in the operation flow
-3. **Given** multiple concurrent requests are in flight, **When** I view console output, **Then** traces from different requests are clearly separated with distinct trace IDs and don't interfere with each other
-
----
-
 ### Edge Cases
 
 - What happens when the console buffer is full after hours of operation with 100% capture enabled? (Data retention/rotation strategy needed)
@@ -62,7 +31,6 @@ Developers need to follow a single user request as it flows through different pa
 - What telemetry is captured when the application runs in restricted server environments (edge runtime, serverless)?
 - How are edge cases handled where sensitive data patterns (emails, tokens) appear in unexpected locations like URL paths or custom headers?
 - What happens if telemetry collection overhead exceeds the 5% performance budget defined in SC-006 - is there automatic throttling or circuit breaking?
-- How are concurrent Server Component renders tracked and correlated when multiple users request the same page simultaneously?
 
 ## Requirements *(mandatory)*
 
@@ -93,7 +61,7 @@ Developers need to follow a single user request as it flows through different pa
 - **SC-001**: Developers can view telemetry data for any application operation within 1 second of the operation completing
 - **SC-002**: Zero additional lines of manual instrumentation code are required in application business logic to achieve basic tracing
 - **SC-003**: Console output includes 100% of HTTP requests made by the application with timing and status information
-- **SC-004**: Trace IDs successfully correlate related operations across at least 3 layers (browser, server, data access)
+- **SC-004**: Trace IDs successfully correlate related spans within a single request with parent-child relationships visible
 - **SC-005**: Error traces include sufficient context (error message, stack trace indicator, failing operation) to begin debugging within 30 seconds
 - **SC-006**: Telemetry collection overhead adds less than 5% to overall application response time
 - **SC-007**: Console telemetry output remains readable and usable (not truncated or malformed) for sessions up to 1 hour of continuous operation
