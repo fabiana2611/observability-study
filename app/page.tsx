@@ -1,15 +1,26 @@
 import AlbumGrid from './components/AlbumGrid';
-import { initializeDatabase, getAlbums } from './lib/db';
+import { initializeDatabase } from './lib/db';
 import type { AlbumListItem } from './lib/types';
 
 /**
  * Home Page (Server Component)
- * Fetches all albums from the database and displays them in a responsive grid
+ * Fetches all albums from the API to demonstrate manual instrumentation
  */
 export default async function Home() {
-  // Initialize database and fetch albums server-side
+  // Initialize database first
   initializeDatabase();
-  const albums: AlbumListItem[] = getAlbums();
+  
+  // Fetch albums through API route to trigger manual instrumentation
+  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
+  const response = await fetch(`${baseUrl}/api/albums`, { 
+    cache: 'no-store' // Disable caching to ensure fresh data
+  });
+  
+  if (!response.ok) {
+    throw new Error('Failed to fetch albums');
+  }
+  
+  const albums: AlbumListItem[] = await response.json();
 
   return (
     <div className="min-h-screen bg-background">

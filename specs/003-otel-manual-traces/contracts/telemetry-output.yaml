@@ -1,0 +1,327 @@
+openapi: 3.1.0
+info:
+  title: OpenTelemetry Console Telemetry Output
+  version: 1.0.0
+  description: |
+    Schema for OpenTelemetry trace data exported to console in JSON format.
+    This defines the structure of telemetry output from manual instrumentation
+    for educational/study purposes.
+
+components:
+  schemas:
+    ConsoleSpanOutput:
+      type: object
+      description: Complete span output as logged to console by ConsoleSpanExporter
+      required:
+        - traceId
+        - spanId
+        - name
+        - kind
+        - timestamp
+        - duration
+        - attributes
+        - status
+        - events
+        - resource
+      properties:
+        traceId:
+          type: string
+          description: Unique identifier for the entire trace (32-character hexadecimal)
+          pattern: '^[0-9a-f]{32}$'
+          example: 'a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6'
+        
+        spanId:
+          type: string
+          description: Unique identifier for this span (16-character hexadecimal)
+          pattern: '^[0-9a-f]{16}$'
+          example: '1234567890abcdef'
+        
+        parentSpanId:
+          type: string
+          nullable: true
+          description: Parent span ID if this is a child span (null for root spans)
+          pattern: '^[0-9a-f]{16}$'
+          example: null
+        
+        name:
+          type: string
+          description: Human-readable operation name
+          example: 'GET /api/albums'
+        
+        kind:
+          type: string
+          enum: [SERVER]
+          description: Span kind (always SERVER for HTTP endpoint handlers)
+          example: 'SERVER'
+        
+        timestamp:
+          type: string
+          format: date-time
+          description: Span start time in ISO 8601 format with milliseconds
+          example: '2026-01-09T14:23:45.123Z'
+        
+        duration:
+          type: integer
+          description: Span duration in nanoseconds
+          minimum: 0
+          example: 111000000
+        
+        attributes:
+          type: object
+          description: Combined resource and span attributes
+          required:
+            - service.name
+            - service.version
+            - deployment.environment
+            - host.name
+            - http.request.method
+            - http.route
+            - http.response.status_code
+            - instrumentation
+          properties:
+            service.name:
+              type: string
+              description: Service name (resource attribute)
+              example: 'observability-study'
+            
+            service.version:
+              type: string
+              description: Service version (resource attribute)
+              pattern: '^\d+\.\d+\.\d+$'
+              example: '0.1.0'
+            
+            deployment.environment:
+              type: string
+              enum: [development, production]
+              description: Deployment environment (resource attribute)
+              example: 'development'
+            
+            host.name:
+              type: string
+              description: Hostname of the machine running the service (resource attribute)
+              example: 'macbook-pro.local'
+            
+            http.request.method:
+              type: string
+              enum: [GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS]
+              description: HTTP request method (span attribute)
+              example: 'GET'
+            
+            http.route:
+              type: string
+              description: HTTP route pattern with parameter placeholders (span attribute)
+              pattern: '^/api/[a-z]+(/\[[a-z]+\])?$'
+              example: '/api/albums/[id]'
+            
+            http.response.status_code:
+              type: integer
+              description: HTTP response status code (span attribute)
+              minimum: 100
+              maximum: 599
+              example: 200
+            
+            instrumentation:
+              type: string
+              enum: [manual]
+              description: Custom attribute indicating instrumentation type
+              example: 'manual'
+        
+        status:
+          type: object
+          description: Span execution status
+          required:
+            - code
+          properties:
+            code:
+              type: string
+              enum: [OK, ERROR, UNSET]
+              description: Status code indicating success or failure
+              example: 'OK'
+            
+            message:
+              type: string
+              description: Optional error message (only present when code is ERROR)
+              example: 'Album not found'
+        
+        events:
+          type: array
+          description: Events that occurred during span execution (primarily exceptions)
+          items:
+            $ref: '#/components/schemas/SpanEvent'
+          example: []
+        
+        resource:
+          type: object
+          description: Resource information identifying the telemetry source
+          required:
+            - attributes
+          properties:
+            attributes:
+              type: object
+              description: Resource attributes
+              required:
+                - service.name
+                - service.version
+                - deployment.environment
+                - host.name
+              properties:
+                service.name:
+                  type: string
+                  example: 'observability-study'
+                
+                service.version:
+                  type: string
+                  example: '0.1.0'
+                
+                deployment.environment:
+                  type: string
+                  enum: [development, production]
+                  example: 'development'
+                
+                host.name:
+                  type: string
+                  example: 'macbook-pro.local'
+    
+    SpanEvent:
+      type: object
+      description: Event that occurred during span execution
+      required:
+        - name
+        - timestamp
+        - attributes
+      properties:
+        name:
+          type: string
+          enum: [exception]
+          description: Event name (typically "exception")
+          example: 'exception'
+        
+        timestamp:
+          type: string
+          format: date-time
+          description: When the event occurred in ISO 8601 format
+          example: '2026-01-09T14:23:45.200Z'
+        
+        attributes:
+          type: object
+          description: Event-specific attributes
+          required:
+            - exception.type
+            - exception.message
+            - exception.stacktrace
+          properties:
+            exception.type:
+              type: string
+              description: Error class name
+              example: 'Error'
+            
+            exception.message:
+              type: string
+              description: Error message
+              example: 'Album not found'
+            
+            exception.stacktrace:
+              type: string
+              description: Full error stack trace
+              example: |
+                Error: Album not found
+                    at GET (/app/api/albums/[id]/route.ts:15:11)
+                    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+
+examples:
+  SuccessfulRequest:
+    summary: Successful GET request to /api/albums
+    value:
+      traceId: 'a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6'
+      spanId: '1234567890abcdef'
+      parentSpanId: null
+      name: 'GET /api/albums'
+      kind: 'SERVER'
+      timestamp: '2026-01-09T14:23:45.123Z'
+      duration: 111000000
+      attributes:
+        service.name: 'observability-study'
+        service.version: '0.1.0'
+        deployment.environment: 'development'
+        host.name: 'macbook-pro.local'
+        http.request.method: 'GET'
+        http.route: '/api/albums'
+        http.response.status_code: 200
+        instrumentation: 'manual'
+      status:
+        code: 'OK'
+      events: []
+      resource:
+        attributes:
+          service.name: 'observability-study'
+          service.version: '0.1.0'
+          deployment.environment: 'development'
+          host.name: 'macbook-pro.local'
+  
+  ErrorRequest:
+    summary: Failed GET request with exception
+    value:
+      traceId: 'b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7'
+      spanId: 'fedcba0987654321'
+      parentSpanId: null
+      name: 'GET /api/albums/[id]'
+      kind: 'SERVER'
+      timestamp: '2026-01-09T14:24:10.456Z'
+      duration: 98000000
+      attributes:
+        service.name: 'observability-study'
+        service.version: '0.1.0'
+        deployment.environment: 'development'
+        host.name: 'macbook-pro.local'
+        http.request.method: 'GET'
+        http.route: '/api/albums/[id]'
+        http.response.status_code: 404
+        instrumentation: 'manual'
+      status:
+        code: 'ERROR'
+        message: 'Album not found'
+      events:
+        - name: 'exception'
+          timestamp: '2026-01-09T14:24:10.520Z'
+          attributes:
+            exception.type: 'Error'
+            exception.message: 'Album not found'
+            exception.stacktrace: |
+              Error: Album not found
+                  at GET (/app/api/albums/[id]/route.ts:15:11)
+                  at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+      resource:
+        attributes:
+          service.name: 'observability-study'
+          service.version: '0.1.0'
+          deployment.environment: 'development'
+          host.name: 'macbook-pro.local'
+  
+  DynamicRouteRequest:
+    summary: Request to dynamic route /api/photos/[id]
+    value:
+      traceId: 'c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8'
+      spanId: 'abcdef0123456789'
+      parentSpanId: null
+      name: 'GET /api/photos/[id]'
+      kind: 'SERVER'
+      timestamp: '2026-01-09T14:25:30.789Z'
+      duration: 85000000
+      attributes:
+        service.name: 'observability-study'
+        service.version: '0.1.0'
+        deployment.environment: 'development'
+        host.name: 'macbook-pro.local'
+        http.request.method: 'GET'
+        http.route: '/api/photos/[id]'
+        http.response.status_code: 200
+        instrumentation: 'manual'
+      status:
+        code: 'OK'
+      events: []
+      resource:
+        attributes:
+          service.name: 'observability-study'
+          service.version: '0.1.0'
+          deployment.environment: 'development'
+          host.name: 'macbook-pro.local'

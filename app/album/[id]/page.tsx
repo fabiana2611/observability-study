@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import PhotoGrid from '@/app/components/PhotoGrid';
-import { initializeDatabase, getAlbumById } from '@/app/lib/db';
+import { initializeDatabase } from '@/app/lib/db';
 import type { AlbumDetail } from '@/app/lib/types';
 
 interface PageProps {
@@ -10,7 +10,7 @@ interface PageProps {
 
 /**
  * Album Detail Page (Server Component)
- * Displays all photos in an album with responsive grid
+ * Fetches album through API to demonstrate manual instrumentation
  */
 export default async function AlbumPage({ params }: PageProps) {
   const { id } = await params;
@@ -20,9 +20,23 @@ export default async function AlbumPage({ params }: PageProps) {
     notFound();
   }
 
-  // Initialize database and fetch album with photos
+  // Initialize database first
   initializeDatabase();
-  const album: AlbumDetail | null = getAlbumById(albumId);
+  
+  // Fetch album through API route to trigger manual instrumentation
+  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
+  const response = await fetch(`${baseUrl}/api/albums/${albumId}`, {
+    cache: 'no-store'
+  });
+
+  if (!response.ok) {
+    if (response.status === 404) {
+      notFound();
+    }
+    throw new Error('Failed to fetch album');
+  }
+  
+  const album: AlbumDetail = await response.json();
 
   if (!album) {
     notFound();
