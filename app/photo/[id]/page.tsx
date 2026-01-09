@@ -1,6 +1,6 @@
 import { notFound } from 'next/navigation';
 import PhotoDetail from '@/app/components/PhotoDetail';
-import { initializeDatabase, getPhotoById } from '@/app/lib/db';
+import { initializeDatabase } from '@/app/lib/db';
 import type { PhotoDetail as PhotoDetailType } from '@/app/lib/types';
 
 interface PageProps {
@@ -9,7 +9,7 @@ interface PageProps {
 
 /**
  * Photo Detail Page (Server Component)
- * Displays a single photo in full size with navigation
+ * Fetches photo through API to demonstrate manual instrumentation
  */
 export default async function PhotoPage({ params }: PageProps) {
   const { id } = await params;
@@ -19,9 +19,23 @@ export default async function PhotoPage({ params }: PageProps) {
     notFound();
   }
 
-  // Initialize database and fetch photo detail
+  // Initialize database first
   initializeDatabase();
-  const photo: PhotoDetailType | null = getPhotoById(photoId);
+  
+  // Fetch photo through API route to trigger manual instrumentation
+  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
+  const response = await fetch(`${baseUrl}/api/photos/${photoId}`, {
+    cache: 'no-store'
+  });
+
+  if (!response.ok) {
+    if (response.status === 404) {
+      notFound();
+    }
+    throw new Error('Failed to fetch photo');
+  }
+  
+  const photo: PhotoDetailType = await response.json();
 
   if (!photo) {
     notFound();
