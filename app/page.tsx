@@ -11,7 +11,7 @@ export default async function Home() {
   initializeDatabase();
   
   // Fetch albums through API route to trigger manual instrumentation
-  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
+  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3001';
   const response = await fetch(`${baseUrl}/api/albums`, { 
     cache: 'no-store' // Disable caching to ensure fresh data
   });
