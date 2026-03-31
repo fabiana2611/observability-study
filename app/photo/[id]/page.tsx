@@ -23,7 +23,7 @@ export default async function PhotoPage({ params }: PageProps) {
   initializeDatabase();
   
   // Fetch photo through API route to trigger manual instrumentation
-  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
+  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3001';
   const response = await fetch(`${baseUrl}/api/photos/${photoId}`, {
     cache: 'no-store'
   });

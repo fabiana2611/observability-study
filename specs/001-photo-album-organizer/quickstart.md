@@ -55,7 +55,7 @@ npm run dev
 ```
 
 **What this does**:
-1. Starts Next.js dev server on `http://localhost:3000`
+1. Starts Next.js dev server on `http://localhost:3001`
 2. Loads SQLite database via API routes
 3. Serves sample photos from `public/` directory
 
@@ -63,7 +63,7 @@ npm run dev
 ```
 > next dev
    ▲ Next.js 16.1.1
-   - Local:        http://localhost:3000
+   - Local:        http://localhost:3001
    - Ready in 1.2s
 ```
 
@@ -71,7 +71,7 @@ npm run dev
 
 ## 4. Open Application
 
-Visit **http://localhost:3000** in your browser.
+Visit **http://localhost:3001** in your browser.
 
 **You should see**:
 - 8 city album cards (Paris, Tokyo, New York, Barcelona, Sydney, Amsterdam, Rio, Dubai)
@@ -160,10 +160,10 @@ public/
 
 ## 9. Troubleshooting
 
-### Port 3000 already in use
+### Port 3001 already in use
 ```bash
 # Find and kill process
-lsof -ti:3000 | xargs kill -9
+lsof -ti:3001 | xargs kill -9
 ```
 
 ### Database errors

@@ -4,6 +4,10 @@
 
 This project has as purpose study of observability. For that, the `observability/` folder has the first configuration for this goal, and a Photo Application was created using [GitHub Spec Kit](https://github.com/github/spec-kit/tree/main), to be used to produce metrics, traces and logs.
 
+Here are some other references used to create this project:
+- [pingprom](https://github.com/kaihendry/pingprom) | [Article](https://mxulises.medium.com/simple-prometheus-setup-on-docker-compose-f702d5f98579)
+
+
 ## Photo Album Organizer
 
 A responsive photo album viewer built with Next.js 16, React 19, and TypeScript. View city-based photo albums, browse photos, and reorder albums with drag-and-drop.
@@ -50,11 +54,54 @@ npm run seed
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) to view the application.
+Open [http://localhost:3001](http://localhost:3001) to view the application.
 
 ### Observability Setup
 
 For zero-code OpenTelemetry observability with console export, see [specs/002-otel-console-export/quickstart.md](specs/002-otel-console-export/quickstart.md).
+
+### Running the Observability Stack (Prometheus, Node Exporter, Alertmanager, Grafana)
+
+The `observability/` folder contains a Docker Compose setup with:
+
+| Service | Description | Port |
+|---|---|---|
+| **Prometheus** | Metrics collection and storage | [http://localhost:9090](http://localhost:9090) |
+| **Node Exporter** | Host machine metrics (CPU, memory, disk, network) | [http://localhost:9100](http://localhost:9100) |
+| **Alertmanager** | Alert routing and notifications | [http://localhost:9093](http://localhost:9093) |
+| **Grafana** | Metrics visualization and dashboards | [http://localhost:3000](http://localhost:3000) |
+
+#### Start the stack
+
+```bash
+cd observability
+docker compose up -d
+```
+
+#### Verify services are running
+
+```bash
+docker compose ps
+```
+
+#### Explore metrics
+
+- **Prometheus UI** — [http://localhost:9090](http://localhost:9090)
+  - Go to **Status → Targets** to confirm Prometheus and Node Exporter are being scraped
+  - Use the **Graph** tab to query metrics (e.g., `node_cpu_seconds_total`, `node_memory_MemAvailable_bytes`)
+- **Node Exporter metrics** — [http://localhost:9100/metrics](http://localhost:9100/metrics) (raw metrics endpoint)
+- **Alertmanager UI** — [http://localhost:9093](http://localhost:9093) to view active alerts
+- **Grafana** — [http://localhost:3000](http://localhost:3000) (login: `admin` / `admin`)
+  - Add Prometheus as a data source: **Connections → Data sources → Add → Prometheus → URL: `http://prometheus:9090`**
+  - Import a Node Exporter dashboard: use ID `1860` from [grafana.com/dashboards](https://grafana.com/grafana/dashboards/1860)
+
+#### Stop the stack
+
+```bash
+docker compose down
+```
+
+> **Note**: Prometheus scrapes metrics every 10 seconds (configured in [observability/prometheus.yml](observability/prometheus.yml)). Alert rules are defined in [observability/rules.yml](observability/rules.yml) and notifications are routed via [observability/alertmanager.yml](observability/alertmanager.yml).
 
 ## Available Scripts
 
