@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getAlbums, initializeDatabase } from '@/app/lib/db';
-import { createHttpSpan, SpanStatusCode } from '@/app/lib/tracing';
+import { createHttpSpan, emitEndpointLogEvent, SpanStatusCode } from '@/app/lib/tracing';
 import { ATTR_HTTP_REQUEST_METHOD, ATTR_HTTP_ROUTE, ATTR_HTTP_RESPONSE_STATUS_CODE } from '@opentelemetry/semantic-conventions';
 
 /**
@@ -8,12 +8,18 @@ import { ATTR_HTTP_REQUEST_METHOD, ATTR_HTTP_ROUTE, ATTR_HTTP_RESPONSE_STATUS_CO
  * Returns all albums with photo count and preview image
  */
 export async function GET() {
+  const method = 'GET';
+  const route = '/api/albums';
+  const startedAtMs = Date.now();
+  let statusCode = 500;
+  let errorMessage: string | null = null;
+
   // Create manual trace span for this endpoint
   const span = createHttpSpan('GET /api/albums');
   
   // Add HTTP semantic convention attributes
-  span.setAttribute(ATTR_HTTP_REQUEST_METHOD, 'GET');
-  span.setAttribute(ATTR_HTTP_ROUTE, '/api/albums');
+  span.setAttribute(ATTR_HTTP_REQUEST_METHOD, method);
+  span.setAttribute(ATTR_HTTP_ROUTE, route);
   span.setAttribute('instrumentation', 'manual');
   
   try {
@@ -23,19 +29,31 @@ export async function GET() {
     // Get all albums
     const albums = getAlbums();
     
-    span.setAttribute(ATTR_HTTP_RESPONSE_STATUS_CODE, 200);
+    statusCode = 200;
+    span.setAttribute(ATTR_HTTP_RESPONSE_STATUS_CODE, statusCode);
     span.setStatus({ code: SpanStatusCode.OK });
     return NextResponse.json(albums);
   } catch (error) {
     console.error('Error fetching albums:', error);
-    span.setAttribute(ATTR_HTTP_RESPONSE_STATUS_CODE, 500);
-    span.setStatus({ code: SpanStatusCode.ERROR, message: error instanceof Error ? error.message : 'Unknown error' });
+    statusCode = 500;
+    errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    span.setAttribute(ATTR_HTTP_RESPONSE_STATUS_CODE, statusCode);
+    span.setStatus({ code: SpanStatusCode.ERROR, message: errorMessage });
     span.recordException(error instanceof Error ? error : new Error(String(error)));
     return NextResponse.json(
-      { error: 'Failed to fetch albums', message: error instanceof Error ? error.message : 'Unknown error' },
-      { status: 500 }
+      { error: 'Failed to fetch albums', message: errorMessage },
+      { status: statusCode }
     );
   } finally {
+    const durationMs = Date.now() - startedAtMs;
+    emitEndpointLogEvent({
+      method,
+      route,
+      status_code: statusCode,
+      span,
+      duration_ms: durationMs,
+      error_message: errorMessage,
+    });
     span.end();
   }
 }
