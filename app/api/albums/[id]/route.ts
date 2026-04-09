@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getAlbumById, initializeDatabase } from '@/app/lib/db';
-import { createHttpSpan, SpanStatusCode } from '@/app/lib/tracing';
+import { createHttpSpan, emitEndpointLogEvent, SpanStatusCode } from '@/app/lib/tracing';
 import { ATTR_HTTP_REQUEST_METHOD, ATTR_HTTP_ROUTE, ATTR_HTTP_RESPONSE_STATUS_CODE } from '@opentelemetry/semantic-conventions';
 
 /**
@@ -11,12 +11,18 @@ export async function GET(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const method = 'GET';
+  const normalizedRoutePattern = '/api/albums/[id]';
+  const startedAtMs = Date.now();
+  let statusCode = 500;
+  let errorMessage: string | null = null;
+
   // Create manual trace span for this endpoint
   const span = createHttpSpan('GET /api/albums/[id]');
   
   // Add HTTP semantic convention attributes
-  span.setAttribute(ATTR_HTTP_REQUEST_METHOD, 'GET');
-  span.setAttribute(ATTR_HTTP_ROUTE, '/api/albums/[id]');
+  span.setAttribute(ATTR_HTTP_REQUEST_METHOD, method);
+  span.setAttribute(ATTR_HTTP_ROUTE, normalizedRoutePattern);
   span.setAttribute('instrumentation', 'manual');
   
   try {
@@ -27,38 +33,54 @@ export async function GET(
     const albumId = parseInt(id, 10);
     
     if (isNaN(albumId)) {
-      span.setAttribute(ATTR_HTTP_RESPONSE_STATUS_CODE, 400);
-      span.setStatus({ code: SpanStatusCode.ERROR, message: 'Invalid album ID' });
+      statusCode = 400;
+      errorMessage = 'Invalid album ID';
+      span.setAttribute(ATTR_HTTP_RESPONSE_STATUS_CODE, statusCode);
+      span.setStatus({ code: SpanStatusCode.ERROR, message: errorMessage });
       return NextResponse.json(
         { error: 'Invalid album ID', message: 'Album ID must be a number' },
-        { status: 400 }
+        { status: statusCode }
       );
     }
     
     const album = getAlbumById(albumId);
     
     if (!album) {
-      span.setAttribute(ATTR_HTTP_RESPONSE_STATUS_CODE, 404);
-      span.setStatus({ code: SpanStatusCode.ERROR, message: 'Album not found' });
+      statusCode = 404;
+      errorMessage = 'Album not found';
+      span.setAttribute(ATTR_HTTP_RESPONSE_STATUS_CODE, statusCode);
+      span.setStatus({ code: SpanStatusCode.ERROR, message: errorMessage });
       return NextResponse.json(
         { error: 'Album not found', message: `No album found with ID ${albumId}` },
-        { status: 404 }
+        { status: statusCode }
       );
     }
     
-    span.setAttribute(ATTR_HTTP_RESPONSE_STATUS_CODE, 200);
+    statusCode = 200;
+    span.setAttribute(ATTR_HTTP_RESPONSE_STATUS_CODE, statusCode);
     span.setStatus({ code: SpanStatusCode.OK });
     return NextResponse.json(album);
   } catch (error) {
     console.error('Error fetching album:', error);
-    span.setAttribute(ATTR_HTTP_RESPONSE_STATUS_CODE, 500);
-    span.setStatus({ code: SpanStatusCode.ERROR, message: error instanceof Error ? error.message : 'Unknown error' });
+    statusCode = 500;
+    errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    span.setAttribute(ATTR_HTTP_RESPONSE_STATUS_CODE, statusCode);
+    span.setStatus({ code: SpanStatusCode.ERROR, message: errorMessage });
     span.recordException(error instanceof Error ? error : new Error(String(error)));
     return NextResponse.json(
-      { error: 'Failed to fetch album', message: error instanceof Error ? error.message : 'Unknown error' },
-      { status: 500 }
+      { error: 'Failed to fetch album', message: errorMessage },
+      { status: statusCode }
     );
   } finally {
+    const durationMs = Date.now() - startedAtMs;
+    emitEndpointLogEvent({
+      method,
+      route: normalizedRoutePattern,
+      status_code: statusCode,
+      span,
+      duration_ms: durationMs,
+      error_message: errorMessage,
+    });
     span.end();
   }
 }

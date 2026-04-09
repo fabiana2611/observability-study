@@ -63,3 +63,30 @@ export interface ApiError {
   message: string;
   status: number;
 }
+
+// Endpoint Logging Types
+
+export type EndpointLogLevel = 'info' | 'error';
+
+export type EndpointLogOutcome = 'success' | 'error';
+
+export type EndpointLogCorrelationState = 'present' | 'missing';
+
+export type EndpointLogEventName = 'endpoint.request.completed';
+
+export interface EndpointLogEvent {
+  timestamp: string;
+  level: EndpointLogLevel;
+  event_name: EndpointLogEventName;
+  service_name: string;
+  environment: string;
+  method: string;
+  route: string;
+  status_code: number;
+  outcome: EndpointLogOutcome;
+  correlation_state: EndpointLogCorrelationState;
+  trace_id?: string | null;
+  span_id?: string | null;
+  duration_ms?: number;
+  error_message?: string | null;
+}

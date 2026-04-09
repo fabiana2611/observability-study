@@ -1,0 +1,155 @@
+openapi: 3.1.0
+info:
+  title: Endpoint Log Event Contract
+  version: 1.0.0
+  description: |
+    Contract for structured endpoint log events correlated with tracing context.
+
+x-canonical-fields:
+  required:
+    - timestamp
+    - level
+    - event_name
+    - service_name
+    - environment
+    - method
+    - route
+    - status_code
+    - outcome
+    - correlation_state
+  optional:
+    - trace_id
+    - span_id
+    - duration_ms
+    - error_message
+  forbidden:
+    - request_body
+    - response_body
+    - payload
+  notes:
+    - Emit exactly one event per handled API request.
+    - Preserve canonical field names to keep downstream export compatibility.
+    - If trace context is absent, set correlation_state to missing and allow trace_id/span_id as null.
+    - service_name defaults to observability-study when OTEL_SERVICE_NAME is unset.
+    - environment defaults to development when NODE_ENV is unset.
+    - error_message is omitted for success events and present for error outcomes.
+
+components:
+  schemas:
+    EndpointLogEvent:
+      type: object
+      description: Canonical endpoint completion event emitted once per API request.
+      required:
+        - timestamp
+        - level
+        - event_name
+        - service_name
+        - environment
+        - method
+        - route
+        - status_code
+        - outcome
+        - correlation_state
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+          description: RFC 3339 UTC event emission timestamp.
+          example: "2026-04-07T18:30:15.225Z"
+        level:
+          type: string
+          enum: [info, error]
+          description: Log severity mapped from request outcome.
+          example: info
+        event_name:
+          type: string
+          enum: [endpoint.request.completed]
+          description: Stable event discriminator.
+          example: endpoint.request.completed
+        service_name:
+          type: string
+          description: Logical service identifier for the emitting app.
+          example: observability-study
+        environment:
+          type: string
+          description: Runtime environment label.
+          example: development
+        method:
+          type: string
+          description: HTTP request method.
+          example: GET
+        route:
+          type: string
+          description: Normalized API route pattern.
+          example: /api/albums/[id]
+        status_code:
+          type: integer
+          minimum: 100
+          maximum: 599
+          description: Final HTTP response status.
+          example: 200
+        outcome:
+          type: string
+          enum: [success, error]
+          description: High-level request result classification.
+          example: success
+        trace_id:
+          type: string
+          nullable: true
+          description: Active trace identifier when context is available.
+          example: a94fcb9d538d4f61bc35fdb9d50f3f8a
+        span_id:
+          type: string
+          nullable: true
+          description: Active span identifier when context is available.
+          example: 9f8f6a2ceeb1bd4a
+        correlation_state:
+          type: string
+          enum: [present, missing]
+          description: Whether trace/span context was available for correlation.
+          example: present
+        duration_ms:
+          type: number
+          minimum: 0
+          description: Total endpoint handling duration in milliseconds.
+          example: 12.4
+        error_message:
+          type: string
+          nullable: true
+          description: Sanitized error detail for failed requests.
+          example: Invalid album ID
+
+examples:
+  Success:
+    summary: Successful request event
+    value:
+      timestamp: "2026-04-07T18:30:15.225Z"
+      level: info
+      event_name: endpoint.request.completed
+      service_name: observability-study
+      environment: development
+      method: GET
+      route: /api/albums
+      status_code: 200
+      outcome: success
+      trace_id: a94fcb9d538d4f61bc35fdb9d50f3f8a
+      span_id: 9f8f6a2ceeb1bd4a
+      correlation_state: present
+      duration_ms: 7.1
+  Failure:
+    summary: Failed request event
+    value:
+      timestamp: "2026-04-07T18:31:09.014Z"
+      level: error
+      event_name: endpoint.request.completed
+      service_name: observability-study
+      environment: development
+      method: GET
+      route: /api/albums/[id]
+      status_code: 400
+      outcome: error
+      trace_id: a94fcb9d538d4f61bc35fdb9d50f3f8a
+      span_id: 9f8f6a2ceeb1bd4a
+      correlation_state: present
+      duration_ms: 4.6
+      error_message: Invalid album ID
