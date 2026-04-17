@@ -8,13 +8,17 @@
  * Co-exists with auto-instrumentation configured in instrumentation.ts
  */
 
-import { context, trace, Span, SpanStatusCode, Tracer, SpanKind } from '@opentelemetry/api';
+import { context, propagation, trace, Span, SpanStatusCode, Tracer, SpanKind } from '@opentelemetry/api';
 import { NodeTracerProvider } from '@opentelemetry/sdk-trace-node';
 import { SimpleSpanProcessor } from '@opentelemetry/sdk-trace-base';
 import type { SpanExporter, ReadableSpan } from '@opentelemetry/sdk-trace-base';
 import { ExportResult, ExportResultCode } from '@opentelemetry/core';
 import { hostname } from 'os';
 import type {
+  ApiMetricEvent,
+  ApiMetricOutcome,
+  ApiMetricStatusClass,
+  EmitApiMetricEventParams,
   EndpointLogCorrelationState,
   EndpointLogEvent,
   EndpointLogLevel,
@@ -38,9 +42,21 @@ let tracerInstance: Tracer | null = null;
 const INVALID_TRACE_ID = '00000000000000000000000000000000';
 const INVALID_SPAN_ID = '0000000000000000';
 const ENDPOINT_LOG_EVENT_NAME = 'endpoint.request.completed';
-const FORBIDDEN_LOG_FIELD_PATTERN = /(?:^|_)(payload|body)$/i;
+const API_METRIC_EVENT_NAME = 'api.request.metric.completed';
+const FORBIDDEN_TELEMETRY_FIELDS = new Set([
+  'requestbody',
+  'responsebody',
+  'payload',
+  'authorization',
+  'cookie',
+]);
 const DEFAULT_SERVICE_NAME = 'observability-study';
-const DEFAULT_ENVIRONMENT = 'development';
+const DEFAULT_ENVIRONMENT = 'local';
+const ENVIRONMENT_OVERRIDE_ENV_VARS = [
+  'OTEL_DEPLOYMENT_ENVIRONMENT',
+  'OBSERVABILITY_ENVIRONMENT',
+  'APP_ENVIRONMENT',
+];
 const PREFIX_FLAG_ENV_VAR = 'ENDPOINT_LOG_PREFIX_ENABLED';
 
 function readNonEmptyEnvValue(value: string | undefined): string | null {
@@ -57,12 +73,20 @@ function resolveServiceName(): string {
 }
 
 function resolveEnvironment(): string {
-  return readNonEmptyEnvValue(process.env.NODE_ENV) ?? DEFAULT_ENVIRONMENT;
+  for (const envVar of ENVIRONMENT_OVERRIDE_ENV_VARS) {
+    const configuredEnvironment = readNonEmptyEnvValue(process.env[envVar]);
+    if (configuredEnvironment) {
+      return configuredEnvironment;
+    }
+  }
+
+  return DEFAULT_ENVIRONMENT;
 }
 
 export interface TraceCorrelationContext {
   trace_id: string | null;
   span_id: string | null;
+  request_id: string | null;
   correlation_state: EndpointLogCorrelationState;
 }
 
@@ -74,6 +98,45 @@ export interface EmitEndpointLogParams {
   duration_ms?: number;
   error_message?: string | null;
   timestamp?: string;
+}
+
+function sanitizeCorrelationId(value: string | null | undefined): string | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const normalized = value.trim();
+  return normalized.length > 0 ? normalized : null;
+}
+
+function extractRequestIdFromContext(): string | null {
+  const activeContext = context.active();
+  const baggage = propagation.getBaggage(activeContext);
+
+  if (baggage) {
+    const baggageKeys = ['request_id', 'request.id', 'x-request-id'];
+    for (const key of baggageKeys) {
+      const baggageValue = baggage.getEntry(key)?.value;
+      const sanitized = sanitizeCorrelationId(baggageValue);
+      if (sanitized) {
+        return sanitized;
+      }
+    }
+  }
+
+  const traceState = trace.getSpan(activeContext)?.spanContext().traceState;
+  if (traceState) {
+    const traceStateKeys = ['request_id', 'request.id', 'x-request-id'];
+    for (const key of traceStateKeys) {
+      const traceStateValue = traceState.get(key);
+      const sanitized = sanitizeCorrelationId(traceStateValue);
+      if (sanitized) {
+        return sanitized;
+      }
+    }
+  }
+
+  return null;
 }
 
 /**
@@ -195,18 +258,35 @@ export function createHttpSpan(operationName: string): Span {
   return span;
 }
 
+export function startRequestTimer(): number {
+  return performance.now();
+}
+
+export function resolveDurationMs(startedAt: number): number {
+  if (!Number.isFinite(startedAt)) {
+    return 0;
+  }
+
+  return Number(Math.max(0, performance.now() - startedAt).toFixed(3));
+}
+
 /**
  * Extract trace/span identifiers for endpoint log correlation.
  * Falls back to the active context span when no explicit span is provided.
  */
-export function extractTraceCorrelation(span?: Span | null): TraceCorrelationContext {
+export function extractTraceCorrelation(
+  span?: Span | null,
+  requestId?: string | null
+): TraceCorrelationContext {
   const sourceSpan = span ?? trace.getSpan(context.active()) ?? null;
+  const resolvedRequestId = sanitizeCorrelationId(requestId) ?? extractRequestIdFromContext();
 
   if (!sourceSpan) {
     return {
       trace_id: null,
       span_id: null,
-      correlation_state: 'missing',
+      request_id: resolvedRequestId,
+      correlation_state: resolvedRequestId ? 'present' : 'missing',
     };
   }
 
@@ -219,13 +299,15 @@ export function extractTraceCorrelation(span?: Span | null): TraceCorrelationCon
     return {
       trace_id: null,
       span_id: null,
-      correlation_state: 'missing',
+      request_id: resolvedRequestId,
+      correlation_state: resolvedRequestId ? 'present' : 'missing',
     };
   }
 
   return {
     trace_id: spanContext.traceId,
     span_id: spanContext.spanId,
+    request_id: resolvedRequestId,
     correlation_state: 'present',
   };
 }
@@ -234,8 +316,69 @@ function resolveEndpointOutcome(statusCode: number): EndpointLogOutcome {
   return statusCode >= 400 ? 'error' : 'success';
 }
 
+export function resolveApiMetricStatusClass(statusCode: number): ApiMetricStatusClass {
+  const normalizedStatusCode = Number.isFinite(statusCode)
+    ? Math.max(100, Math.min(599, Math.trunc(statusCode)))
+    : 500;
+
+  if (normalizedStatusCode < 200) {
+    return '1xx';
+  }
+
+  if (normalizedStatusCode < 300) {
+    return '2xx';
+  }
+
+  if (normalizedStatusCode < 400) {
+    return '3xx';
+  }
+
+  if (normalizedStatusCode < 500) {
+    return '4xx';
+  }
+
+  return '5xx';
+}
+
+function resolveApiMetricOutcome(statusCode: number): ApiMetricOutcome {
+  return statusCode >= 400 ? 'error' : 'success';
+}
+
+function resolveValidatedApiMetricStatusClass(
+  statusCode: number,
+  providedStatusClass?: ApiMetricStatusClass
+): ApiMetricStatusClass {
+  const derivedStatusClass = resolveApiMetricStatusClass(statusCode);
+  return providedStatusClass === derivedStatusClass ? providedStatusClass : derivedStatusClass;
+}
+
+function resolveValidatedApiMetricOutcome(
+  statusCode: number,
+  providedOutcome?: ApiMetricOutcome
+): ApiMetricOutcome {
+  const derivedOutcome = resolveApiMetricOutcome(statusCode);
+  return providedOutcome === derivedOutcome ? providedOutcome : derivedOutcome;
+}
+
 function resolveEndpointLevel(outcome: EndpointLogOutcome): EndpointLogLevel {
   return outcome === 'error' ? 'error' : 'info';
+}
+
+function resolveApiMetricCorrelation(
+  params: EmitApiMetricEventParams
+): Pick<ApiMetricEvent, 'trace_id' | 'span_id' | 'request_id' | 'correlation_state'> {
+  const extractedCorrelation = extractTraceCorrelation(params.span, params.request_id);
+  const traceId = sanitizeCorrelationId(params.trace_id) ?? extractedCorrelation.trace_id;
+  const spanId = sanitizeCorrelationId(params.span_id) ?? extractedCorrelation.span_id;
+  const requestId = sanitizeCorrelationId(params.request_id) ?? extractedCorrelation.request_id;
+  const hasCorrelationIdentifiers = Boolean(traceId || spanId || requestId);
+
+  return {
+    trace_id: hasCorrelationIdentifiers ? traceId : null,
+    span_id: hasCorrelationIdentifiers ? spanId : null,
+    request_id: hasCorrelationIdentifiers ? requestId : null,
+    correlation_state: hasCorrelationIdentifiers ? 'present' : 'missing',
+  };
 }
 
 function normalizeEndpointLogFields(event: EndpointLogEvent): EndpointLogEvent {
@@ -308,12 +451,17 @@ function alignEndpointLogEventKeys(event: EndpointLogEvent): EndpointLogEvent {
   return alignedEvent;
 }
 
-function safeSerializeEndpointLog(event: EndpointLogEvent): string {
+function isForbiddenTelemetryField(key: string): boolean {
+  const normalizedKey = key.toLowerCase().replace(/[^a-z0-9]/g, '');
+  return FORBIDDEN_TELEMETRY_FIELDS.has(normalizedKey);
+}
+
+function safeSerializeTelemetry(event: unknown): string {
   const seen = new WeakSet<object>();
 
   return JSON.stringify(event, (key, value: unknown) => {
-    // Defensive guard: never emit payload/body fields if they are accidentally introduced.
-    if (key && FORBIDDEN_LOG_FIELD_PATTERN.test(key)) {
+    // Defensive guard: never emit forbidden payload/auth fields if they are accidentally introduced.
+    if (key && isForbiddenTelemetryField(key)) {
       return undefined;
     }
 
@@ -345,6 +493,16 @@ function isEndpointLogPrefixEnabled(): boolean {
 
   const normalizedFlag = rawFlag.toLowerCase();
   return !['0', 'false', 'no', 'off'].includes(normalizedFlag);
+}
+
+function emitNonBlocking(action: () => void): void {
+  queueMicrotask(() => {
+    try {
+      action();
+    } catch (error) {
+      console.error('Telemetry emission failed:', error);
+    }
+  });
 }
 
 /**
@@ -381,16 +539,84 @@ export function emitEndpointLogEvent(params: EmitEndpointLogParams): EndpointLog
 
   const normalizedEvent = normalizeEndpointLogFields(event);
   const alignedEvent = alignEndpointLogEventKeys(normalizedEvent);
-  const serializedEvent = safeSerializeEndpointLog(alignedEvent);
+  const serializedEvent = safeSerializeTelemetry(alignedEvent);
 
   if (isEndpointLogPrefixEnabled()) {
     const logPrefix = formatEndpointLogPrefix(alignedEvent.level);
-    console.log(`${logPrefix} ${serializedEvent}`);
+    emitNonBlocking(() => {
+      console.log(`${logPrefix} ${serializedEvent}`);
+    });
   } else {
-    console.log(serializedEvent);
+    emitNonBlocking(() => {
+      console.log(serializedEvent);
+    });
   }
 
   return alignedEvent;
+}
+
+/**
+ * Emit a structured API metric completion event to stdout.
+ * Returns the event object so route handlers can compose additional behavior.
+ */
+export function emitApiMetricEvent(params: EmitApiMetricEventParams): ApiMetricEvent {
+  const normalizedMethod = params.method.trim().toUpperCase();
+  const routeWithoutQuery = params.route.trim().split('?')[0] || '/';
+  const normalizedRoute = routeWithoutQuery.startsWith('/')
+    ? routeWithoutQuery
+    : `/${routeWithoutQuery}`;
+  const normalizedStatusCode = Number.isFinite(params.status_code)
+    ? Math.max(100, Math.min(599, Math.trunc(params.status_code)))
+    : 500;
+  const normalizedDurationMs = Number.isFinite(params.duration_ms)
+    ? Math.max(0, params.duration_ms)
+    : 0;
+  const correlation = resolveApiMetricCorrelation(params);
+  const statusClass = resolveValidatedApiMetricStatusClass(normalizedStatusCode, params.status_class);
+  const outcome = resolveValidatedApiMetricOutcome(normalizedStatusCode, params.outcome);
+
+  const event: ApiMetricEvent = {
+    timestamp: params.timestamp ?? new Date().toISOString(),
+    event_name: API_METRIC_EVENT_NAME,
+    service_name: params.service_name ?? resolveServiceName(),
+    environment: params.environment ?? resolveEnvironment(),
+    method: normalizedMethod,
+    route: normalizedRoute,
+    status_code: normalizedStatusCode,
+    status_class: statusClass,
+    outcome,
+    duration_ms: normalizedDurationMs,
+    correlation_state: correlation.correlation_state,
+  };
+
+  if (typeof correlation.trace_id === 'string' || correlation.trace_id === null) {
+    event.trace_id = correlation.trace_id;
+  }
+
+  if (typeof correlation.span_id === 'string' || correlation.span_id === null) {
+    event.span_id = correlation.span_id;
+  }
+
+  if (typeof correlation.request_id === 'string' || correlation.request_id === null) {
+    event.request_id = correlation.request_id;
+  }
+
+  if (outcome === 'error' && typeof params.error_message === 'string') {
+    const sanitizedError = params.error_message.trim();
+    if (sanitizedError.length > 0) {
+      event.error_message = sanitizedError;
+    }
+  } else if (outcome === 'error' && params.error_message === null) {
+    event.error_message = null;
+  }
+
+  const serializedEvent = safeSerializeTelemetry(event);
+
+  emitNonBlocking(() => {
+    console.log(serializedEvent);
+  });
+
+  return event;
 }
 
 /**

@@ -1,3 +1,5 @@
+import type { Span } from '@opentelemetry/api';
+
 // Database Entity Types
 
 export interface Album {
@@ -89,4 +91,50 @@ export interface EndpointLogEvent {
   span_id?: string | null;
   duration_ms?: number;
   error_message?: string | null;
+}
+
+// API Metric Event Types
+
+export type ApiMetricEventName = 'api.request.metric.completed';
+
+export type ApiMetricOutcome = 'success' | 'error';
+
+export type ApiMetricCorrelationState = 'present' | 'missing';
+
+export type ApiMetricStatusClass = '1xx' | '2xx' | '3xx' | '4xx' | '5xx';
+
+export interface ApiMetricEvent {
+  timestamp: string;
+  event_name: ApiMetricEventName;
+  service_name: string;
+  environment: string;
+  method: string;
+  route: string;
+  status_code: number;
+  status_class: ApiMetricStatusClass;
+  outcome: ApiMetricOutcome;
+  duration_ms: number;
+  correlation_state: ApiMetricCorrelationState;
+  trace_id?: string | null;
+  span_id?: string | null;
+  request_id?: string | null;
+  error_message?: string | null;
+}
+
+export interface EmitApiMetricEventParams {
+  method: string;
+  route: string;
+  status_code: number;
+  duration_ms: number;
+  span?: Span | null;
+  status_class?: ApiMetricStatusClass;
+  outcome?: ApiMetricOutcome;
+  trace_id?: string | null;
+  span_id?: string | null;
+  request_id?: string | null;
+  correlation_state?: ApiMetricCorrelationState;
+  error_message?: string | null;
+  service_name?: string;
+  environment?: string;
+  timestamp?: string;
 }
