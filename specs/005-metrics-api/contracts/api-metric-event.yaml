@@ -1,0 +1,212 @@
+openapi: 3.1.0
+info:
+  title: API Metric Event Contract
+  version: 1.0.0
+  description: |
+    Canonical contract for structured API metric completion events.
+
+x-canonical-fields:
+  required:
+    - timestamp
+    - event_name
+    - service_name
+    - environment
+    - method
+    - route
+    - status_code
+    - status_class
+    - outcome
+    - duration_ms
+    - correlation_state
+  optional:
+    - trace_id
+    - span_id
+    - request_id
+    - error_message
+  forbidden:
+    - request_body
+    - response_body
+    - payload
+    - authorization
+    - cookie
+  notes:
+    - Emit exactly one event per handled API request.
+    - Use normalized route templates for dynamic paths.
+    - If identifiers are unavailable, set correlation_state to missing and allow identifier fields as null.
+    - Default environment is local unless explicitly overridden by deployment configuration.
+    - When correlation_state is present, at least one correlation identifier is expected.
+    - Emit error_message only for outcome=error.
+    - This phase emits completion events only; aggregate counters/histograms are out of scope.
+
+x-validation-rules:
+  - status_code must be an integer between 100 and 599.
+  - status_class must match status_code family (1xx..5xx).
+  - outcome must match status_code class (2xx/3xx -> success, 4xx/5xx -> error).
+  - duration_ms must be non-negative.
+  - if correlation_state=missing, trace_id/span_id/request_id should be null or absent.
+  - if outcome=success, error_message should be absent.
+  - if outcome=error, error_message may be present with sanitized text.
+
+components:
+  schemas:
+    ApiMetricEvent:
+      type: object
+      description: Canonical API metric completion event emitted once per request.
+      required:
+        - timestamp
+        - event_name
+        - service_name
+        - environment
+        - method
+        - route
+        - status_code
+        - status_class
+        - outcome
+        - duration_ms
+        - correlation_state
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+          description: RFC 3339 UTC event emission timestamp.
+          example: "2026-04-15T18:10:21.225Z"
+        event_name:
+          type: string
+          enum: [api.request.metric.completed]
+          description: Stable metric event discriminator.
+          example: api.request.metric.completed
+        service_name:
+          type: string
+          description: Logical service identifier.
+          example: observability-study
+        environment:
+          type: string
+          description: Runtime environment label.
+          example: local
+        method:
+          type: string
+          description: HTTP request method.
+          example: GET
+        route:
+          type: string
+          description: Normalized API route pattern.
+          example: /api/albums/[id]
+        status_code:
+          type: integer
+          minimum: 100
+          maximum: 599
+          description: Final HTTP response status code.
+          example: 200
+        status_class:
+          type: string
+          enum: [1xx, 2xx, 3xx, 4xx, 5xx]
+          description: HTTP status class derived from status_code.
+          example: 2xx
+        outcome:
+          type: string
+          enum: [success, error]
+          description: Request outcome classification.
+          example: success
+        duration_ms:
+          type: number
+          minimum: 0
+          description: Request duration in milliseconds.
+          example: 8.4
+        trace_id:
+          type: string
+          nullable: true
+          description: Trace identifier when available.
+          example: a94fcb9d538d4f61bc35fdb9d50f3f8a
+        span_id:
+          type: string
+          nullable: true
+          description: Span identifier when available.
+          example: 9f8f6a2ceeb1bd4a
+        request_id:
+          type: string
+          nullable: true
+          description: Request identifier when available.
+          example: req_18f1d9397c8f4a1b
+        correlation_state:
+          type: string
+          enum: [present, missing]
+          description: Whether correlation identifiers were available at emission time.
+          example: present
+        error_message:
+          type: string
+          nullable: true
+          description: Sanitized error summary for failure outcomes.
+          example: Invalid album ID
+
+examples:
+  Success:
+    summary: Successful request metric event
+    value:
+      timestamp: "2026-04-15T18:10:21.225Z"
+      event_name: api.request.metric.completed
+      service_name: observability-study
+      environment: local
+      method: GET
+      route: /api/albums
+      status_code: 200
+      status_class: 2xx
+      outcome: success
+      duration_ms: 8.4
+      trace_id: a94fcb9d538d4f61bc35fdb9d50f3f8a
+      span_id: 9f8f6a2ceeb1bd4a
+      request_id: req_18f1d9397c8f4a1b
+      correlation_state: present
+  Failure:
+    summary: Failed request metric event
+    value:
+      timestamp: "2026-04-15T18:12:03.014Z"
+      event_name: api.request.metric.completed
+      service_name: observability-study
+      environment: local
+      method: GET
+      route: /api/albums/[id]
+      status_code: 400
+      status_class: 4xx
+      outcome: error
+      duration_ms: 4.6
+      trace_id: a94fcb9d538d4f61bc35fdb9d50f3f8a
+      span_id: 9f8f6a2ceeb1bd4a
+      request_id: req_c6a7b2b0e6d24df3
+      correlation_state: present
+      error_message: Invalid album ID
+  MissingCorrelation:
+    summary: Metric event when correlation identifiers are unavailable
+    value:
+      timestamp: "2026-04-15T18:14:57.331Z"
+      event_name: api.request.metric.completed
+      service_name: observability-study
+      environment: local
+      method: GET
+      route: /api/health
+      status_code: 200
+      status_class: 2xx
+      outcome: success
+      duration_ms: 3.1
+      trace_id: null
+      span_id: null
+      request_id: null
+      correlation_state: missing
+
+  ErrorWithoutCorrelation:
+    summary: Failed request metric event without available correlation identifiers
+    value:
+      timestamp: "2026-04-15T18:16:42.114Z"
+      event_name: api.request.metric.completed
+      service_name: observability-study
+      environment: local
+      method: GET
+      route: /api/photos/[id]
+      status_code: 400
+      status_class: 4xx
+      outcome: error
+      duration_ms: 2.7
+      trace_id: null
+      span_id: null
+      request_id: null
+      correlation_state: missing
+      error_message: Invalid photo ID

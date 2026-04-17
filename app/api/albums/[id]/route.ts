@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getAlbumById, initializeDatabase } from '@/app/lib/db';
-import { createHttpSpan, emitEndpointLogEvent, SpanStatusCode } from '@/app/lib/tracing';
+import { createHttpSpan, emitApiMetricEvent, emitEndpointLogEvent, resolveDurationMs, SpanStatusCode, startRequestTimer } from '@/app/lib/tracing';
 import { ATTR_HTTP_REQUEST_METHOD, ATTR_HTTP_ROUTE, ATTR_HTTP_RESPONSE_STATUS_CODE } from '@opentelemetry/semantic-conventions';
 
 /**
@@ -13,7 +13,8 @@ export async function GET(
 ) {
   const method = 'GET';
   const normalizedRoutePattern = '/api/albums/[id]';
-  const startedAtMs = Date.now();
+  const metricRoutePattern = '/api/albums/[id]';
+  const startedAt = startRequestTimer();
   let statusCode = 500;
   let errorMessage: string | null = null;
 
@@ -72,7 +73,16 @@ export async function GET(
       { status: statusCode }
     );
   } finally {
-    const durationMs = Date.now() - startedAtMs;
+    const durationMs = resolveDurationMs(startedAt);
+    const metricErrorMessage = statusCode >= 400 ? errorMessage : undefined;
+    emitApiMetricEvent({
+      method,
+      route: metricRoutePattern,
+      status_code: statusCode,
+      span,
+      duration_ms: durationMs,
+      error_message: metricErrorMessage,
+    });
     emitEndpointLogEvent({
       method,
       route: normalizedRoutePattern,
